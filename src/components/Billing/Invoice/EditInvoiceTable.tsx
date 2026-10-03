@@ -120,6 +120,22 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+// Charge item definitions can carry factor/amount as plain JSON numbers
+// (e.g. the fixture-seeded taxes), while zodDecimal only accepts strings.
+// Normalise every component the same way before it reaches the form.
+const toFormComponent = (component: MonetaryComponent) => ({
+  ...component,
+  factor: component.factor != null ? round(component.factor) : component.factor,
+  amount: component.amount != null ? round(component.amount) : component.amount,
+  conditions: component.conditions?.map((condition) => ({
+    ...condition,
+    _conditionType: getConditionDiscriminatorValue(
+      condition.metric,
+      condition.operation,
+    ),
+  })),
+});
+
 // Helper to extract all error messages from a row's errors object
 function getRowErrors(
   rowErrors: FieldErrors<FormValues["items"][number]> | undefined,
@@ -211,28 +227,15 @@ export function EditInvoiceTable({
           MonetaryComponentType.base,
           PriceComponentType.unit_price,
         )[0];
-        const discountComponents = getComponentsFromChargeItem(
+        const discounts = getComponentsFromChargeItem(
           item,
           MonetaryComponentType.discount,
           PriceComponentType.unit_price,
-        );
+        ).map(toFormComponent);
         const taxComponents = getComponentsFromChargeItem(
           item.charge_item_definition,
           MonetaryComponentType.tax,
-        );
-
-        const discounts = discountComponents.map((component) => ({
-          ...component,
-          factor: component.factor ? round(component.factor) : component.factor,
-          amount: component.amount ? round(component.amount) : component.amount,
-          conditions: component.conditions?.map((condition) => ({
-            ...condition,
-            _conditionType: getConditionDiscriminatorValue(
-              condition.metric,
-              condition.operation,
-            ),
-          })),
-        }));
+        ).map(toFormComponent);
 
         return {
           id: item.id,
@@ -243,7 +246,7 @@ export function EditInvoiceTable({
           baseAmount: round(baseComponent?.amount || "0"),
           quantity: round(item.quantity),
           taxComponents,
-          discounts: discounts,
+          discounts,
         };
       }),
     },
